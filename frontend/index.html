@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MatchDay OS — Stadium Intelligence</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#0E1613;
+    --bg-2:#0A100D;
+    --surface:#161F1A;
+    --surface-2:#1D2A23;
+    --line:rgba(245,247,242,0.09);
+    --text:#F5F7F2;
+    --text-dim:#93A69B;
+    --amber:#F2A93B;
+    --amber-dim:rgba(242,169,59,0.15);
+    --cyan:#35D0C4;
+    --cyan-dim:rgba(53,208,196,0.15);
+    --red:#E8615D;
+    --red-dim:rgba(232,97,93,0.15);
+    --green:#5BC77E;
+    --green-dim:rgba(91,199,126,0.15);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:radial-gradient(ellipse at top, #101B15 0%, var(--bg-2) 60%);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding:28px 20px 60px;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .display{font-family:'Big Shoulders Display',sans-serif; font-weight:800; letter-spacing:0.01em;}
+
+  .wrap{max-width:1180px; margin:0 auto;}
+  header{display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:18px; margin-bottom:26px; border-bottom:1px solid var(--line); padding-bottom:20px;}
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--amber); margin-bottom:6px;}
+  h1{font-size:40px; line-height:1; text-transform:uppercase;}
+  .sub{color:var(--text-dim); font-size:13.5px; margin-top:6px; max-width:460px;}
+  .tabs{display:flex; gap:6px; background:var(--surface); padding:5px; border-radius:11px; border:1px solid var(--line);}
+  .tab-btn{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:0.06em; text-transform:uppercase;
+    padding:10px 18px; border-radius:8px; border:none; background:transparent; color:var(--text-dim); cursor:pointer;
+    transition:all .2s;
+  }
+  .tab-btn.active{background:var(--amber); color:#1A1206; font-weight:600;}
+  .tab-btn:not(.active):hover{color:var(--text); background:var(--surface-2);}
+
+  .view{display:none;}
+  .view.active{display:block; animation:fadein .35s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+  .sync-badge{display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono'; font-size:10.5px; color:var(--text-dim); margin-top:10px;}
+  .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(91,199,126,.6); animation:pulse-dot 2s infinite;}
+  @keyframes pulse-dot{0%{box-shadow:0 0 0 0 rgba(91,199,126,.5);}70%{box-shadow:0 0 0 6px rgba(91,199,126,0);}100%{box-shadow:0 0 0 0 rgba(91,199,126,0);}}
+
+  .fan-grid{display:grid; grid-template-columns:340px 1fr; gap:22px;}
+  @media(max-width:860px){.fan-grid{grid-template-columns:1fr;}}
+
+  .phone{
+    background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+    border:1px solid var(--line); border-radius:26px; padding:18px; width:100%;
+    box-shadow:0 30px 60px -25px rgba(0,0,0,0.6);
+  }
+  .phone-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .phone-title{font-family:'Big Shoulders Display'; font-weight:700; font-size:18px; text-transform:uppercase;}
+  .lang-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;}
+  .lang-chip{
+    font-family:'IBM Plex Mono'; font-size:11px; padding:6px 10px; border-radius:20px; border:1px solid var(--line);
+    background:var(--bg); color:var(--text-dim); cursor:pointer; transition:.15s;
+  }
+  .lang-chip.active{background:var(--cyan); border-color:var(--cyan); color:#04211E; font-weight:600;}
+
+  .chatbox{background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:14px; height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; margin-bottom:12px;}
+  .msg{max-width:85%; padding:9px 12px; border-radius:12px; font-size:13px; line-height:1.45;}
+  .msg.ai{background:var(--surface-2); align-self:flex-start; border-bottom-left-radius:3px;}
+  .msg.user{background:var(--amber-dim); border:1px solid rgba(242,169,59,0.3); align-self:flex-end; border-bottom-right-radius:3px;}
+  .msg.typing{color:var(--text-dim); font-style:italic;}
+
+  .quick-row{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;}
+  .quick-chip{font-size:11.5px; padding:6px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); cursor:pointer;}
+  .quick-chip:hover{border-color:var(--amber);}
+
+  .chat-input-row{display:flex; gap:8px;}
+  .chat-input-row input{flex:1; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:11px 12px; color:var(--text); font-size:13px; font-family:'Inter';}
+  .chat-input-row input:focus{outline:none; border-color:var(--cyan);}
+  .send-btn{background:var(--cyan); border:none; border-radius:10px; padding:0 16px; color:#04211E; font-weight:700; cursor:pointer; font-size:13px;}
+  .send-btn:disabled{opacity:.5; cursor:default;}
+
+  .fan-right{display:flex; flex-direction:column; gap:18px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px;}
+  .card-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:10px; flex-wrap:wrap;}
+  .card-title{font-family:'Big Shoulders Display'; font-weight:700; font-size:19px; text-transform:uppercase;}
+  .pill{font-family:'IBM Plex Mono'; font-size:10.5px; padding:4px 9px; border-radius:20px; letter-spacing:.05em;}
+  .pill.live{background:var(--red-dim); color:var(--red);}
+  .pill.ok{background:var(--green-dim); color:var(--green);}
+
+  .bowl-wrap{display:flex; gap:20px; flex-wrap:wrap; align-items:center;}
+  .route-note{flex:1; min-width:180px; font-size:12.5px; color:var(--text-dim); line-height:1.6;}
+  .route-note b{color:var(--text); font-weight:600;}
+
+  .stat-strip{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:6px;}
+  .stat{background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;}
+  .stat .num{font-family:'Big Shoulders Display'; font-size:26px; color:var(--amber);}
+  .stat .lbl{font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.06em; margin-top:2px;}
+
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-top:1px solid var(--line);}
+  .toggle-row:first-of-type{border-top:none;}
+  .toggle-lbl{font-size:13px;}
+  .toggle-desc{font-size:11px; color:var(--text-dim);}
+  .switch{position:relative; width:40px; height:22px; background:var(--surface-2); border-radius:20px; cursor:pointer; border:1px solid var(--line);}
+  .switch.on{background:var(--cyan);}
+  .switch::after{content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text); transition:.2s;}
+  .switch.on::after{left:20px; background:#04211E;}
+
+  .ops-grid{display:grid; grid-template-columns:1.3fr 1fr; gap:20px;}
+  @media(max-width:980px){.ops-grid{grid-template-columns:1fr;}}
+  .kpi-strip{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;}
+  @media(max-width:700px){.kpi-strip{grid-template-columns:repeat(2,1fr);}}
+  .kpi{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px;}
+  .kpi .num{font-family:'Big Shoulders Display'; font-size:30px;}
+  .kpi .lbl{font-size:10.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
+  .kpi .delta{font-size:11px; margin-top:6px;}
+  .delta.up{color:var(--red);} .delta.down{color:var(--green);}
+
+  .legend{display:flex; gap:14px; font-size:11px; color:var(--text-dim); margin-top:10px; flex-wrap:wrap;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
+
+  .alert-feed{display:flex; flex-direction:column; gap:10px; max-height:230px; overflow-y:auto; margin-top:6px;}
+  .alert{background:var(--bg); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:8px; padding:10px 12px;}
+  .alert.high{border-left-color:var(--red);}
+  .alert.low{border-left-color:var(--cyan);}
+  .alert-top{display:flex; justify-content:space-between; font-family:'IBM Plex Mono'; font-size:10px; color:var(--text-dim); margin-bottom:4px;}
+  .alert-body{font-size:12.5px; line-height:1.5;}
+
+  .btn{
+    font-family:'IBM Plex Mono'; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase;
+    background:var(--amber); color:#1A1206; border:none; border-radius:9px; padding:10px 16px; font-weight:700; cursor:pointer;
+  }
+  .btn.secondary{background:var(--surface-2); color:var(--text); border:1px solid var(--line);}
+  .btn:disabled{opacity:.5; cursor:default;}
+
+  textarea{
+    width:100%; background:var(--bg); border:1px solid var(--line); border-radius:10px; color:var(--text);
+    font-family:'Inter'; font-size:12.5px; padding:10px; resize:vertical; min-height:80px; line-height:1.5;
+  }
+  textarea:focus, input:focus{outline:none; border-color:var(--cyan);}
+  .out-box{background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; font-size:12.5px; line-height:1.6; margin-top:10px; min-height:40px; white-space:pre-wrap;}
+  .out-box.empty{color:var(--text-dim); font-style:italic;}
+
+  .lang-checks{display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;}
+  .lang-check{font-size:11px; padding:5px 10px; border-radius:20px; border:1px solid var(--line); background:var(--bg); color:var(--text-dim); cursor:pointer;}
+  .lang-check.active{background:var(--cyan-dim); border-color:var(--cyan); color:var(--cyan);}
+
+  .table-wrap{margin-top:6px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; font-family:'IBM Plex Mono'; font-size:10px; text-transform:uppercase; color:var(--text-dim); padding:6px 8px; border-bottom:1px solid var(--line);}
+  td{padding:8px; border-bottom:1px solid var(--line);}
+  .tag{font-size:10px; padding:3px 8px; border-radius:20px; font-family:'IBM Plex Mono';}
+  .tag.crit{background:var(--red-dim); color:var(--red);}
+  .tag.warn{background:var(--amber-dim); color:var(--amber);}
+  .tag.norm{background:var(--cyan-dim); color:var(--cyan);}
+
+  .history-list{display:flex; flex-direction:column; gap:6px; margin-top:10px; max-height:130px; overflow-y:auto;}
+  .history-item{font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--line); padding-top:6px;}
+  .history-item b{color:var(--text); font-weight:600;}
+  .history-item .ts{font-family:'IBM Plex Mono'; font-size:10px; color:var(--text-dim); opacity:.7;}
+
+  .query-list{display:flex; flex-direction:column; gap:5px; max-height:130px; overflow-y:auto; margin-bottom:10px; font-size:11.5px; color:var(--text-dim);}
+  .query-list .q{border-top:1px solid var(--line); padding-top:5px;}
+  .query-list .q span.tag2{font-family:'IBM Plex Mono'; font-size:9.5px; color:var(--cyan); margin-right:6px;}
+  .query-empty{font-style:italic; color:var(--text-dim); font-size:11.5px;}
+
+  .map-box{width:100%; border-radius:12px; overflow:hidden; border:1px solid var(--line);}
+  #miniMap{height:220px; background:var(--bg);}
+  #opsMap{height:320px; background:var(--bg);}
+  .map-legend{display:flex; gap:14px; font-size:11px; color:var(--text-dim); margin-top:10px; flex-wrap:wrap;}
+  .leaflet-popup-content-wrapper{background:var(--surface-2); color:var(--text); border-radius:10px; border:1px solid var(--line);}
+  .leaflet-popup-content{font-family:'Inter',sans-serif; font-size:12.5px; margin:9px 12px;}
+  .leaflet-popup-tip{background:var(--surface-2);}
+  .leaflet-container a.leaflet-popup-close-button{color:var(--text-dim);}
+  .leaflet-control-attribution{background:rgba(14,22,19,0.75) !important; color:var(--text-dim) !important; font-size:9.5px !important;}
+  .leaflet-control-attribution a{color:var(--text-dim) !important;}
+  .leaflet-control-zoom a{background:var(--surface-2) !important; color:var(--text) !important; border-color:var(--line) !important;}
+
+  .full-span{grid-column:1/-1;}
+  .footnote{color:var(--text-dim); font-size:11px; text-align:center; margin-top:36px; line-height:1.7; max-width:640px; margin-left:auto; margin-right:auto;}
+  ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-thumb{background:var(--surface-2); border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="eyebrow">Stadium Intelligence · FIFA World Cup 2026</div>
+      <h1 class="display">MatchDay OS</h1>
+      <div class="sub">One generative layer, two views: a multilingual companion for fans in their pocket, and a live command center for the people running the building.</div>
+      <div class="sync-badge"><span class="sync-dot"></span> Connected to shared live state — <span id="lastSync">syncing…</span></div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchView('fan')">Fan Companion</button>
+      <button class="tab-btn" onclick="switchView('ops')">Ops Command Center</button>
+    </div>
+  </header>
+
+  <!-- ================= FAN VIEW ================= -->
+  <div class="view active" id="view-fan">
+    <div class="fan-grid">
+
+      <div class="phone">
+        <div class="phone-head">
+          <div class="phone-title">Ask MatchDay</div>
+          <span class="pill live">● live</span>
+        </div>
+        <div class="lang-row" id="langRow"></div>
+        <div class="chatbox" id="chatbox">
+          <div class="msg ai">Hi! I'm your GenAI matchday assistant — ask me anything in any language: seats, gates, food, transit, accessibility. Try a quick question below or type your own.</div>
+        </div>
+        <div class="quick-row">
+          <div class="quick-chip" onclick="sendQuick('Where is my seat, section 214 row 12?')">Find my seat</div>
+          <div class="quick-chip" onclick="sendQuick('What is the fastest accessible route to the nearest exit?')">Accessible route</div>
+          <div class="quick-chip" onclick="sendQuick('When does the last shuttle leave after the match?')">Last shuttle</div>
+          <div class="quick-chip" onclick="sendQuick('Is Gate C busy right now?')">Gate crowding</div>
+        </div>
+        <div class="chat-input-row">
+          <input id="chatInput" type="text" placeholder="Type in any language…" onkeydown="if(event.key==='Enter')sendChat()">
+          <button class="send-btn" id="sendBtn" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+
+      <div class="fan-right">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Your route — Gate C → Sec 214</div>
+            <span class="pill ok">On time</span>
+          </div>
+          <div class="bowl-wrap">
+            <div id="bowlFan"></div>
+            <div class="route-note">
+              <span id="routeNoteText">Loading live crowd data…</span>
+              <div class="stat-strip">
+                <div class="stat"><div class="num" id="minToSeat">—</div><div class="lbl">Min to seat</div></div>
+                <div class="stat"><div class="num">3</div><div class="lbl">Gates away</div></div>
+                <div class="stat"><div class="num" id="congestionStat">—</div><div class="lbl">Congestion</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Venue map</div>
+            <span class="pill ok">Gate C highlighted</span>
+          </div>
+          <div class="map-box"><div id="miniMap"></div></div>
+          <div class="map-legend">
+            <span><span class="dot" style="background:#35D0C4"></span> Your gate</span>
+            <span><span class="dot" style="background:#93A69B"></span> Parking &amp; transit</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="margin-bottom:14px;">Trip settings</div>
+          <div class="toggle-row">
+            <div><div class="toggle-lbl">Accessibility mode</div><div class="toggle-desc">Step-free routing, larger text, audio cues</div></div>
+            <div class="switch" id="accessSwitch" onclick="toggleSwitch('accessSwitch')"></div>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-lbl">Green travel nudges</div><div class="toggle-desc">Prefers transit &amp; walking routes over rideshare</div></div>
+            <div class="switch on" id="greenSwitch" onclick="toggleSwitch('greenSwitch')"></div>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-lbl">Real-time gate alerts</div><div class="toggle-desc">Push a nudge if your gate gets congested</div></div>
+            <div class="switch on" id="alertSwitch" onclick="toggleSwitch('alertSwitch')"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">Your matchday footprint</div>
+            <span class="pill ok">-18% vs. avg fan</span>
+          </div>
+          <div class="route-note">You took transit to today's match and used a reusable cup twice. Estimated <b>2.4 kg CO₂e</b> saved versus a solo drive-and-disposable trip. The AI trip planner favored the light-rail option because your route had a stop within 6 minutes of your seat gate.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= OPS VIEW ================= -->
+  <div class="view" id="view-ops">
+
+    <div class="kpi-strip">
+      <div class="kpi"><div class="num mono" id="kpiAttendance">—</div><div class="lbl">In-venue now</div><div class="delta up">live feed</div></div>
+      <div class="kpi"><div class="num mono" id="kpiWait">—</div><div class="lbl">Avg gate wait</div><div class="delta down">live feed</div></div>
+      <div class="kpi"><div class="num mono" id="kpiLangs">0</div><div class="lbl">Languages translated today</div><div class="delta down">shared log</div></div>
+      <div class="kpi"><div class="num mono">92</div><div class="lbl">Sustainability index</div><div class="delta down">↑ 3 pts</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-head">
+        <div class="card-title">Live gate map</div>
+        <span class="pill live">● updates with feed</span>
+      </div>
+      <div class="map-box"><div id="opsMap"></div></div>
+      <div class="map-legend">
+        <span><span class="dot" style="background:#5BC77E"></span> Light &lt;50%</span>
+        <span><span class="dot" style="background:#F2A93B"></span> Moderate 50–80%</span>
+        <span><span class="dot" style="background:#E8615D"></span> Heavy &gt;80%</span>
+        <span><span class="dot" style="background:#93A69B"></span> Parking / shuttle</span>
+      </div>
+    </div>
+
+    <div class="ops-grid">
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Crowd density — full bowl</div>
+          <button class="btn secondary" onclick="refreshFeed()">Refresh feed</button>
+        </div>
+        <div id="bowlOps"></div>
+        <div class="legend">
+          <span><span class="dot" style="background:#5BC77E"></span> Light &lt;50%</span>
+          <span><span class="dot" style="background:#F2A93B"></span> Moderate 50–80%</span>
+          <span><span class="dot" style="background:#E8615D"></span> Heavy &gt;80%</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">AI predictive alerts</div>
+          <button class="btn" id="genInsightBtn" onclick="generateInsight()">Generate insight</button>
+        </div>
+        <div class="alert-feed" id="alertFeed"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">Incident summarizer</div></div>
+        <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:8px;">Paste raw radio/text chatter from volunteers or stewards — Claude condenses it into a clean, actionable brief and logs it to the shared incident record.</div>
+        <textarea id="incidentInput">14:02 sec22 steward: fan feeling unwell near row F, requesting medic
+14:03 gate B radio: minor pushing near entry, queue backing up 40m
+14:04 concourse team: spilled drinks north concourse level 2, slip hazard
+14:05 medic dispatched sec22, eta 3 min
+14:06 gate B: queue easing, added one more lane</textarea>
+        <button class="btn secondary" style="margin-top:10px;" id="summarizeBtn" onclick="summarizeIncident()">Summarize with AI</button>
+        <div class="out-box empty" id="incidentOut">Summary will appear here…</div>
+        <div class="history-list" id="incidentHistory"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div class="card-title">Trending fan questions</div><button class="btn secondary" id="trendBtn" onclick="summarizeTrends()">Summarize trends</button></div>
+        <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">Live log of what fans are actually asking the chat assistant right now.</div>
+        <div class="query-list" id="queryList"><div class="query-empty">No questions logged yet — try the Fan Companion chat.</div></div>
+        <div class="out-box empty" id="trendOut">AI trend summary will appear here…</div>
+      </div>
+
+      <div class="card full-span">
+        <div class="card-head"><div class="card-title">Multilingual staff broadcast</div></div>
+        <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:8px;">Write one message once — Claude translates it instantly for every language team on shift, and logs it to the shared broadcast record.</div>
+        <textarea id="broadcastInput" style="min-height:56px;">Attention all gate staff: Gate C is approaching capacity. Please direct incoming fans toward Gate C2 for the next 15 minutes.</textarea>
+        <div class="lang-checks" id="broadcastLangs"></div>
+        <button class="btn" id="broadcastBtn" onclick="translateBroadcast()">Translate &amp; broadcast</button>
+        <div class="out-box empty" id="broadcastOut">Translations will appear here…</div>
+        <div class="history-list" id="broadcastHistory"></div>
+      </div>
+
+      <div class="card full-span">
+        <div class="card-head"><div class="card-title">Resource reallocation</div></div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Zone</th><th>Signal</th><th>AI recommendation</th></tr>
+            <tr><td>Gate C</td><td><span class="tag crit">Critical</span></td><td>+2 stewards, open Gate C2 by 15:40</td></tr>
+            <tr><td>North concourse</td><td><span class="tag warn">Watch</span></td><td>Cleanup crew — spill hazard reported</td></tr>
+            <tr><td>Sec 214–220</td><td><span class="tag norm">Normal</span></td><td>No action needed</td></tr>
+            <tr><td>Shuttle bay 3</td><td><span class="tag warn">Watch</span></td><td>Stagger next departure by 4 min</td></tr>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footnote">MatchDay OS — self-hosted build. Crowd density, alerts, incident logs, broadcasts, and fan questions are stored by the Express backend in this repo (<code>backend/server.js</code>) and shared across every client hitting this server. Chat replies, incident summaries, and translations are generated live by Claude via the backend's proxy endpoint, which holds the API key server-side. Because this storage is shared across whoever can reach this server, don't paste anything sensitive into it.</div>
+</div>
+
+<script>
+/* =========================================================
+   BACKEND — persistent shared state via window.storage
+/* =========================================================
+   BACKEND — talks to the real Express server in /backend
+   (/api/storage/:key mirrors the shape of Claude.ai's window.storage,
+   /api/claude proxies the Anthropic API so the key stays server-side)
+   ========================================================= */
+const API_BASE = ''; // same-origin — server.js serves this file itself
+const STATE_KEY = 'matchday-stadium-state';
+let S = null; // in-memory mirror of the shared backend state
+
+function defaultState(){
+  return {
+    densities: Array.from({length:20}, ()=> +(Math.random()*0.55+0.15).toFixed(2)),
+    alerts: [
+      {sev:'high', zone:'Gate C', text:"Gate C projected to exceed 90% capacity in ~11 minutes at current entry rate. Recommend opening auxiliary Gate C2 and diverting rideshare drop-offs to Lot 4.", time: Date.now()},
+      {sev:'med', zone:'North concourse L2', text:"Foot traffic density trending up ahead of half-time. Consider pre-positioning two additional stewards near the food court junction.", time: Date.now()-60000},
+      {sev:'low', zone:'Shuttle Bay 3', text:"Queue length stable. No action needed for the next 20 minutes.", time: Date.now()-120000}
+    ],
+    incidents: [],
+    broadcasts: [],
+    queries: [],
+    kpis: {attendance:68214, wait:6.4},
+    updatedAt: Date.now()
+  };
+}
+
+async function loadState(){
+  try{
+    const r = await fetch(`${API_BASE}/api/storage/${STATE_KEY}`);
+    if(!r.ok) throw new Error('not found');
+    const body = await r.json();
+    const parsed = JSON.parse(body.value);
+    return Object.assign(defaultState(), parsed);
+  }catch(e){
+    const fresh = defaultState();
+    try{
+      await fetch(`${API_BASE}/api/storage/${STATE_KEY}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({value: JSON.stringify(fresh)})
+      });
+    }catch(e2){ console.error('seed failed', e2); }
+    return fresh;
+  }
+}
+
+async function saveState(){
+  S.updatedAt = Date.now();
+  try{
+    const res = await fetch(`${API_BASE}/api/storage/${STATE_KEY}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({value: JSON.stringify(S)})
+    });
+    if(!res.ok) console.error('Storage write returned', res.status);
+    document.getElementById('lastSync').textContent = 'last write ' + new Date().toLocaleTimeString();
+  }catch(e){
+    console.error('Storage write failed', e);
+    document.getElementById('lastSync').textContent = 'sync error — retrying…';
+  }
+}
+
+async function pollRemote(){
+  try{
+    const r = await fetch(`${API_BASE}/api/storage/${STATE_KEY}`);
+    if(!r.ok) return;
+    const body = await r.json();
+    const remote = JSON.parse(body.value);
+    if(remote.updatedAt && S && remote.updatedAt > S.updatedAt){
+      S = Object.assign(defaultState(), remote);
+      renderAll();
+      document.getElementById('lastSync').textContent = 'updated from another session · ' + new Date().toLocaleTimeString();
+    }
+  }catch(e){ /* nothing remote yet, ignore */ }
+}
+
+/* ---------- Claude API helper — via our own backend proxy ---------- */
+async function callClaude(userText, systemPrompt){
+  const res = await fetch(`${API_BASE}/api/claude`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ system: systemPrompt, message: userText })
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || 'backend error');
+  return (data.text || '').trim() || "(no response)";
+}
+
+/* ---------- view switching ---------- */
+function switchView(v){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('view-fan').classList.toggle('active', v==='fan');
+  document.getElementById('view-ops').classList.toggle('active', v==='ops');
+  setTimeout(()=>{
+    if(v==='fan' && miniMap) miniMap.invalidateSize();
+    if(v==='ops' && opsMap) opsMap.invalidateSize();
+  }, 60);
+}
+function toggleSwitch(id){ document.getElementById(id).classList.toggle('on'); }
+
+/* ---------- languages ---------- */
+const LANGS = [
+  {code:'en', label:'EN'}, {code:'es', label:'ES'}, {code:'fr', label:'FR'},
+  {code:'pt', label:'PT'}, {code:'ar', label:'AR'}, {code:'ja', label:'JA'}, {code:'zh', label:'ZH'}
+];
+let activeLang = 'en';
+const langRow = document.getElementById('langRow');
+LANGS.forEach(l=>{
+  const chip = document.createElement('div');
+  chip.className = 'lang-chip' + (l.code==='en' ? ' active' : '');
+  chip.textContent = l.label;
+  chip.onclick = ()=>{ activeLang = l.code; document.querySelectorAll('.lang-chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); };
+  langRow.appendChild(chip);
+});
+const LANG_NAMES = {en:'English', es:'Spanish', fr:'French', pt:'Portuguese', ar:'Arabic', ja:'Japanese', zh:'Mandarin Chinese'};
+
+/* ---------- fan chat (writes to shared query log) ---------- */
+const chatbox = document.getElementById('chatbox');
+function addMsg(text, cls){
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.textContent = text;
+  chatbox.appendChild(d);
+  chatbox.scrollTop = chatbox.scrollHeight;
+  return d;
+}
+function sendQuick(text){ document.getElementById('chatInput').value = text; sendChat(); }
+
+async function sendChat(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  addMsg(text, 'user');
+  const typingEl = addMsg('Thinking…', 'ai typing');
+  const sys = `You are the MatchDay OS assistant, a helpful GenAI concierge for FIFA World Cup 2026 stadium visitors. Answer in ${LANG_NAMES[activeLang]} only, in 2-4 short sentences, warm and practical. You can invent plausible but clearly fictional matchday specifics (gate numbers, walk times, amenities) since this is a demo — never claim to pull real live data. Cover topics like wayfinding, seating, accessibility, transport, food, and safety.`;
+  try{
+    const reply = await callClaude(text, sys);
+    typingEl.remove();
+    addMsg(reply, 'ai');
+  }catch(e){
+    typingEl.remove();
+    addMsg('Sorry, I had trouble reaching the assistant just now — please try again.', 'ai');
+  }
+  document.getElementById('sendBtn').disabled = false;
+
+  // log to shared backend so ops can see trending fan questions
+  S.queries.unshift({text, lang: LANG_NAMES[activeLang], time: Date.now()});
+  S.queries = S.queries.slice(0, 40);
+  await saveState();
+  renderQueryList();
+}
+
+/* ---------- stadium bowl SVG ---------- */
+function polar(cx, cy, r, angleDeg){
+  const a = (angleDeg-90) * Math.PI/180;
+  return { x: cx + r*Math.cos(a), y: cy + r*Math.sin(a) };
+}
+function arcPath(cx, cy, rInner, rOuter, startAngle, endAngle){
+  const p1 = polar(cx,cy,rOuter,startAngle), p2 = polar(cx,cy,rOuter,endAngle);
+  const p3 = polar(cx,cy,rInner,endAngle), p4 = polar(cx,cy,rInner,startAngle);
+  const large = (endAngle-startAngle) > 180 ? 1 : 0;
+  return `M ${p1.x} ${p1.y} A ${rOuter} ${rOuter} 0 ${large} 1 ${p2.x} ${p2.y}
+          L ${p3.x} ${p3.y} A ${rInner} ${rInner} 0 ${large} 0 ${p4.x} ${p4.y} Z`;
+}
+function densityColor(v){
+  if(v > 0.8) return '#E8615D';
+  if(v > 0.5) return '#F2A93B';
+  return '#5BC77E';
+}
+function buildBowl(targetId, size, opts){
+  const cx = size/2, cy = size/2;
+  const rInner = size*0.24, rOuter = size*0.46;
+  const segCount = opts.densities.length;
+  const el = document.getElementById(targetId);
+  el.innerHTML = '';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.setAttribute('width', size); svg.setAttribute('height', size);
+
+  const pitch = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  pitch.setAttribute('x', cx-rInner*0.72); pitch.setAttribute('y', cy-rInner*0.5);
+  pitch.setAttribute('width', rInner*1.44); pitch.setAttribute('height', rInner*1.0);
+  pitch.setAttribute('rx', 6);
+  pitch.setAttribute('fill', '#1B3B2A'); pitch.setAttribute('stroke', 'rgba(245,247,242,0.25)');
+  svg.appendChild(pitch);
+
+  for(let i=0;i<segCount;i++){
+    const start = i * (360/segCount);
+    const end = start + (360/segCount) - 2.4;
+    const density = opts.densities[i];
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', arcPath(cx,cy,rInner,rOuter,start,end));
+    const highlighted = opts.highlight && opts.highlight.includes(i);
+    path.setAttribute('fill', highlighted ? '#35D0C4' : densityColor(density));
+    path.setAttribute('opacity', highlighted ? 0.95 : 0.8);
+    path.setAttribute('stroke', 'rgba(10,16,13,0.6)');
+    path.setAttribute('stroke-width', '1.5');
+    svg.appendChild(path);
+  }
+
+  if(opts.gateLabels){
+    opts.gateLabels.forEach(g=>{
+      const p = polar(cx,cy,rOuter+14,g.angle);
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', p.x); t.setAttribute('y', p.y);
+      t.setAttribute('fill', 'rgba(245,247,242,0.55)');
+      t.setAttribute('font-size', size*0.028);
+      t.setAttribute('font-family', 'IBM Plex Mono, monospace');
+      t.setAttribute('text-anchor','middle');
+      t.textContent = g.label;
+      svg.appendChild(t);
+    });
+  }
+  el.appendChild(svg);
+}
+function renderOpsBowl(){
+  buildBowl('bowlOps', 340, {
+    densities: S.densities,
+    gateLabels: [
+      {angle:0,label:'GATE A'},{angle:90,label:'GATE C'},{angle:180,label:'GATE E'},{angle:270,label:'GATE G'}
+    ]
+  });
+}
+function renderFanBowl(){
+  // fan bowl mirrors a slice of the real shared density data, centered on the fan's own gate (index 3)
+  const slice = [];
+  for(let i=-4;i<=4;i++){ slice.push(S.densities[(3+i+S.densities.length)%S.densities.length]); }
+  buildBowl('bowlFan', 190, { densities: slice, highlight:[4], gateLabels: [{angle:90,label:'C'}] });
+}
+function renderFanRoute(){
+  const d = S.densities[3] ?? 0.5;
+  const pct = Math.round(d*100);
+  const level = d>0.8? 'High' : d>0.5 ? 'Moderate':'Low';
+  const addedMin = d>0.8?3:d>0.5?2:1;
+  document.getElementById('routeNoteText').innerHTML = `AI wayfinding is rerouting you through the <b>north concourse</b> — your usual path near Gate C2 is at <b>${pct}%</b> capacity. This adds roughly <b>${addedMin} minute${addedMin>1?'s':''}</b> but keeps you clear of the queue.`;
+  document.getElementById('congestionStat').textContent = level;
+  document.getElementById('minToSeat').textContent = 4 + addedMin;
+}
+
+/* ---------- venue maps (Leaflet + OpenStreetMap/CARTO, no API key needed) ---------- */
+const STADIUM = {lat: 40.8135, lng: -74.0745}; // MetLife Stadium, East Rutherford, NJ — a real 2026 host venue
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// Gate positions around the stadium, mapped to the same density indices used by the SVG bowl (20 segments, 18° apart)
+const GATE_POINTS = [
+  {label:'Gate A', idx:0,  lat: STADIUM.lat+0.0016, lng: STADIUM.lng},
+  {label:'Gate C', idx:5,  lat: STADIUM.lat,          lng: STADIUM.lng+0.0019},
+  {label:'Gate E', idx:10, lat: STADIUM.lat-0.0016, lng: STADIUM.lng},
+  {label:'Gate G', idx:15, lat: STADIUM.lat,          lng: STADIUM.lng-0.0019}
+];
+const POI_POINTS = [
+  {label:'Parking Lot P1', lat: STADIUM.lat+0.0032, lng: STADIUM.lng+0.0032},
+  {label:'Parking Lot P2', lat: STADIUM.lat+0.0032, lng: STADIUM.lng-0.0032},
+  {label:'Parking Lot P3', lat: STADIUM.lat-0.0032, lng: STADIUM.lng-0.0032},
+  {label:'Shuttle & Rail Stop', lat: STADIUM.lat-0.0045, lng: STADIUM.lng},
+  {label:'Accessible entrance', lat: STADIUM.lat+0.0004, lng: STADIUM.lng+0.0021}
+];
+
+let miniMap, opsMap;
+let miniGateMarker, opsGateMarkers = [];
+
+function initMaps(){
+  if(typeof L === 'undefined') return; // library failed to load — page still works without maps
+
+  miniMap = L.map('miniMap', {zoomControl:false, attributionControl:true}).setView([STADIUM.lat, STADIUM.lng], 16);
+  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(miniMap);
+  L.circleMarker([STADIUM.lat, STADIUM.lng], {radius:9, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
+    .addTo(miniMap).bindPopup('<b>MetLife Stadium</b><br>Pitch / field level');
+  const gateC = GATE_POINTS[1];
+  miniGateMarker = L.circleMarker([gateC.lat, gateC.lng], {radius:9, weight:2, color:'#0E1613', fillOpacity:0.95}).addTo(miniMap);
+  POI_POINTS.forEach(p=>{
+    L.circleMarker([p.lat, p.lng], {radius:6, weight:1.5, color:'#0E1613', fillColor:'#93A69B', fillOpacity:0.9})
+      .addTo(miniMap).bindPopup(`<b>${p.label}</b>`);
+  });
+
+  opsMap = L.map('opsMap', {zoomControl:true, attributionControl:true}).setView([STADIUM.lat, STADIUM.lng], 15);
+  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(opsMap);
+  L.circleMarker([STADIUM.lat, STADIUM.lng], {radius:12, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
+    .addTo(opsMap).bindPopup('<b>MetLife Stadium</b><br>Pitch / field level');
+  opsGateMarkers = GATE_POINTS.map(g=>{
+    const m = L.circleMarker([g.lat, g.lng], {radius:11, weight:2, color:'#0E1613', fillOpacity:0.95}).addTo(opsMap);
+    m.gateInfo = g;
+    return m;
+  });
+  POI_POINTS.forEach(p=>{
+    L.circleMarker([p.lat, p.lng], {radius:6, weight:1.5, color:'#0E1613', fillColor:'#93A69B', fillOpacity:0.9})
+      .addTo(opsMap).bindPopup(`<b>${p.label}</b>`);
+  });
+
+  updateMapMarkers();
+}
+
+function updateMapMarkers(){
+  if(!S) return;
+  const gateC = GATE_POINTS[1];
+  const dC = S.densities[gateC.idx] ?? 0.5;
+  if(miniGateMarker){
+    miniGateMarker.setStyle({fillColor:'#35D0C4'});
+    miniGateMarker.setPopupContent(`<b>Gate C — your gate</b><br>${Math.round(dC*100)}% capacity`);
+  }
+  opsGateMarkers.forEach(m=>{
+    const d = S.densities[m.gateInfo.idx] ?? 0.5;
+    m.setStyle({fillColor: densityColor(d)});
+    m.setPopupContent(`<b>${m.gateInfo.label}</b><br>${Math.round(d*100)}% capacity`);
+  });
+}
+
+/* ---------- ops feed refresh (writes to shared backend) ---------- */
+async function refreshFeed(){
+  S.densities = S.densities.map(d => +(Math.min(0.98, Math.max(0.05, d + (Math.random()-0.5)*0.25))).toFixed(2));
+  await saveState();
+  renderOpsBowl();
+  renderFanBowl();
+  renderFanRoute();
+  updateMapMarkers();
+}
+
+/* ---------- KPI ticker (ambient drift, persisted) ---------- */
+function renderKPIs(){
+  document.getElementById('kpiAttendance').textContent = Math.round(S.kpis.attendance).toLocaleString();
+  document.getElementById('kpiWait').textContent = S.kpis.wait.toFixed(1) + ' min';
+  document.getElementById('kpiLangs').textContent = new Set(S.broadcasts.flatMap(b=>b.langs||[])).size;
+}
+async function tick(){
+  S.kpis.attendance += Math.floor(Math.random()*140);
+  S.kpis.wait = Math.max(2, +(S.kpis.wait + (Math.random()-0.55)*0.6).toFixed(1));
+  S.densities = S.densities.map(d => +(Math.min(0.98, Math.max(0.05, d + (Math.random()-0.5)*0.06))).toFixed(2));
+  await saveState();
+  renderKPIs();
+  renderOpsBowl();
+  renderFanBowl();
+  renderFanRoute();
+  updateMapMarkers();
+}
+
+/* ---------- alerts ---------- */
+function renderAlerts(){
+  const feed = document.getElementById('alertFeed');
+  feed.innerHTML = '';
+  S.alerts.forEach(a=>{
+    const cls = a.sev==='high' ? 'high' : a.sev==='low' ? 'low' : '';
+    const div = document.createElement('div');
+    div.className = 'alert ' + cls;
+    const time = new Date(a.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    div.innerHTML = `<div class="alert-top"><span>${a.zone.toUpperCase()}</span><span>${time}</span></div><div class="alert-body">${a.text}</div>`;
+    feed.appendChild(div);
+  });
+}
+async function generateInsight(){
+  const btn = document.getElementById('genInsightBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  const snapshot = S.densities.slice(0,8).map((d,i)=>`zone${i+1}: ${(d*100).toFixed(0)}%`).join(', ');
+  const sys = `You are an operations AI for a FIFA World Cup 2026 stadium control room. Given simulated live crowd-density readings for stadium zones (percent of capacity), write ONE short predictive alert (2-3 sentences) in the voice of a calm, precise ops assistant: name the most concerning zone, project what happens if nothing changes, and give one concrete recommendation (staffing, gate, signage, or routing). No preamble, no markdown, just the alert text.`;
+  try{
+    const text = await callClaude(`Current zone density snapshot: ${snapshot}. Average gate wait: ${S.kpis.wait.toFixed(1)} minutes.`, sys);
+    const maxD = Math.max(...S.densities);
+    const maxZone = S.densities.indexOf(maxD);
+    S.alerts.unshift({sev: maxD > 0.8 ? 'high':'med', zone:`Zone ${maxZone+1}`, text, time: Date.now()});
+    S.alerts = S.alerts.slice(0, 12);
+    await saveState();
+    renderAlerts();
+  }catch(e){
+    S.alerts.unshift({sev:'med', zone:'System', text:'Could not reach the AI insight service — showing last known status only.', time: Date.now()});
+    renderAlerts();
+  }
+  btn.disabled = false; btn.textContent = 'Generate insight';
+}
+
+/* ---------- incident summarizer ---------- */
+function renderIncidentHistory(){
+  const el = document.getElementById('incidentHistory');
+  el.innerHTML = '';
+  S.incidents.slice(0,4).forEach(i=>{
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.innerHTML = `<span class="ts">${new Date(i.time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span> — ${i.summary.split('\n')[0]}`;
+    el.appendChild(div);
+  });
+}
+async function summarizeIncident(){
+  const btn = document.getElementById('summarizeBtn');
+  const out = document.getElementById('incidentOut');
+  const raw = document.getElementById('incidentInput').value.trim();
+  if(!raw) return;
+  btn.disabled = true; btn.textContent = 'Summarizing…';
+  out.classList.add('empty'); out.textContent = 'Working…';
+  const sys = `You are an operations AI summarizing raw radio/text chatter from stadium stewards and medics during a live event. Produce a tight control-room brief: a one-line headline, then 3-5 bullet points covering what happened, current status, and any outstanding action items. Be factual and concise, no speculation beyond what's stated, no markdown headers, plain bullets using "-".`;
+  try{
+    const summary = await callClaude(raw, sys);
+    out.classList.remove('empty');
+    out.textContent = summary;
+    S.incidents.unshift({summary, raw, time: Date.now()});
+    S.incidents = S.incidents.slice(0, 8);
+    await saveState();
+    renderIncidentHistory();
+  }catch(e){
+    out.textContent = 'Could not generate summary — please try again.';
+  }
+  btn.disabled = false; btn.textContent = 'Summarize with AI';
+}
+
+/* ---------- trending fan questions ---------- */
+function renderQueryList(){
+  const el = document.getElementById('queryList');
+  if(S.queries.length===0){ el.innerHTML = '<div class="query-empty">No questions logged yet — try the Fan Companion chat.</div>'; return; }
+  el.innerHTML = '';
+  S.queries.slice(0,10).forEach(q=>{
+    const div = document.createElement('div');
+    div.className = 'q';
+    div.innerHTML = `<span class="tag2">${q.lang}</span>${q.text}`;
+    el.appendChild(div);
+  });
+}
+async function summarizeTrends(){
+  const btn = document.getElementById('trendBtn');
+  const out = document.getElementById('trendOut');
+  if(S.queries.length===0){ out.classList.add('empty'); out.textContent = 'No fan questions logged yet.'; return; }
+  btn.disabled = true; btn.textContent = 'Summarizing…';
+  out.classList.add('empty'); out.textContent = 'Working…';
+  const joined = S.queries.slice(0,20).map(q=>`[${q.lang}] ${q.text}`).join('\n');
+  const sys = `You are an operations AI reviewing a live log of real questions fans just asked a stadium chat assistant. Identify the 2-3 dominant themes, note any language patterns worth staffing for, and suggest one concrete ops action (signage, staffing, comms) based on what fans are actually asking. Keep it to 4-5 short lines, no markdown headers.`;
+  try{
+    const summary = await callClaude(joined, sys);
+    out.classList.remove('empty');
+    out.textContent = summary;
+  }catch(e){
+    out.textContent = 'Could not generate trend summary — please try again.';
+  }
+  btn.disabled = false; btn.textContent = 'Summarize trends';
+}
+
+/* ---------- broadcast translator ---------- */
+const BROADCAST_LANGS = ['Spanish','French','Portuguese','Arabic','Japanese','Mandarin Chinese'];
+let selectedBroadcastLangs = new Set(['Spanish','French']);
+const blRow = document.getElementById('broadcastLangs');
+BROADCAST_LANGS.forEach(l=>{
+  const chip = document.createElement('div');
+  chip.className = 'lang-check' + (selectedBroadcastLangs.has(l) ? ' active' : '');
+  chip.textContent = l;
+  chip.onclick = ()=>{
+    if(selectedBroadcastLangs.has(l)){ selectedBroadcastLangs.delete(l); chip.classList.remove('active'); }
+    else { selectedBroadcastLangs.add(l); chip.classList.add('active'); }
+  };
+  blRow.appendChild(chip);
+});
+function renderBroadcastHistory(){
+  const el = document.getElementById('broadcastHistory');
+  el.innerHTML = '';
+  S.broadcasts.slice(0,4).forEach(b=>{
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.innerHTML = `<span class="ts">${new Date(b.time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span> — <b>${(b.langs||[]).join(', ')}</b>: ${b.message}`;
+    el.appendChild(div);
+  });
+}
+async function translateBroadcast(){
+  const btn = document.getElementById('broadcastBtn');
+  const out = document.getElementById('broadcastOut');
+  const msg = document.getElementById('broadcastInput').value.trim();
+  if(!msg || selectedBroadcastLangs.size===0) return;
+  btn.disabled = true; btn.textContent = 'Translating…';
+  out.classList.add('empty'); out.textContent = 'Working…';
+  const langs = Array.from(selectedBroadcastLangs);
+  const sys = `You translate short operational staff broadcasts for a stadium control room into multiple languages. For each requested language, output one line formatted exactly as "LANGUAGE: translation". Keep the operational tone and meaning precise. No extra commentary.`;
+  try{
+    const result = await callClaude(`Message: "${msg}"\nTranslate into: ${langs.join(', ')}`, sys);
+    out.classList.remove('empty');
+    out.textContent = result;
+    S.broadcasts.unshift({message: msg, langs, time: Date.now()});
+    S.broadcasts = S.broadcasts.slice(0, 8);
+    await saveState();
+    renderBroadcastHistory();
+    renderKPIs();
+  }catch(e){
+    out.textContent = 'Could not generate translations — please try again.';
+  }
+  btn.disabled = false; btn.textContent = 'Translate & broadcast';
+}
+
+/* ---------- boot ---------- */
+function renderAll(){
+  renderOpsBowl();
+  renderFanBowl();
+  renderFanRoute();
+  renderKPIs();
+  renderAlerts();
+  renderIncidentHistory();
+  renderBroadcastHistory();
+  renderQueryList();
+  updateMapMarkers();
+}
+async function init(){
+  S = await loadState();
+  initMaps();
+  renderAll();
+  document.getElementById('lastSync').textContent = 'connected · ' + new Date().toLocaleTimeString();
+  setInterval(tick, 8000);
+  setInterval(pollRemote, 5000);
+}
+init();
+</script>
+</body>
+</html>

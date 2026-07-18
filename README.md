@@ -1,24 +1,46 @@
 # MatchDay OS — Stadium Intelligence
 
-A GenAI-enabled concept for enhancing stadium operations and fan experience during the FIFA World Cup 2026. Single-page app, two linked views — a fan-facing companion and an operations command center — sharing one live backend.
+A GenAI-enabled concept for enhancing stadium operations and fan experience during the FIFA World Cup 2026. Two linked views — a fan-facing companion and an operations command center — sharing one live backend.
 
-**Live demo (Claude-hosted):** replace with your published claude.site link
-**Local file:** `index.html` — just open it in a browser
+**Claude.ai-hosted demo:** https://claude.ai/public/artifacts/663e9dbb-3670-447c-bccb-429515acf58e
+
+---
+
+## Project structure
+
+```
+.
+├── frontend/
+│   ├── index.html            ← self-hosted build, talks to backend/server.js
+│   └── claude-artifact.html  ← original build, for pasting into a Claude.ai Artifact
+├── backend/
+│   ├── server.js             ← Express server: storage API + Anthropic proxy + static hosting
+│   ├── package.json
+│   ├── .env.example
+│   └── data/                 ← on-disk JSON store (created automatically, gitignored)
+├── README.md
+└── LICENSE
+```
+
+There are **two frontend builds** because this project started as a Claude.ai Artifact (which provides free built-in storage and API access), and was then extended with a real backend so it can run anywhere:
+
+- **`frontend/claude-artifact.html`** — uses Claude.ai's `window.storage` and calls `api.anthropic.com` directly. Only works when run inside the Claude.ai Artifact runtime (e.g. pasted into claude.ai or published as an artifact). Zero setup, no server needed.
+- **`frontend/index.html`** — identical UI and features, but calls a real backend (`/api/storage/...`, `/api/claude`) instead. This is the one `backend/server.js` serves, and the one to use for self-hosting.
 
 ---
 
 ## What it does
 
 ### Fan Companion
-- Multilingual AI chat assistant (7 languages) for wayfinding, seating, accessibility, transport, and food questions — powered by live Claude API calls, not scripted responses
+- Multilingual AI chat assistant (7 languages) for wayfinding, seating, accessibility, transport, and food questions
 - AI-adjusted wayfinding card that reads real-time crowd density and explains its routing decision
-- Interactive venue map (Leaflet + OpenStreetMap/CARTO) with the fan's gate, parking, transit, and the accessible entrance
+- Interactive venue map (Leaflet + OpenStreetMap/CARTO, no API key required) with the fan's gate, parking, transit, and the accessible entrance
 - Accessibility mode, green-travel, and gate-alert toggles
 - Personal sustainability footprint summary
 
 ### Ops Command Center
 - Live stadium bowl heatmap (SVG) and a literal live gate map, both driven by the same shared density data
-- **AI predictive alerts** — generates a fresh, real recommendation from the current crowd snapshot on demand
+- **AI predictive alerts** — generates a fresh recommendation from the current crowd snapshot on demand
 - **Incident summarizer** — condenses raw steward/medic radio chatter into a clean control-room brief and logs it
 - **Trending fan questions** — aggregates real questions fans asked the chat assistant and has Claude synthesize themes + a recommended ops action
 - **Multilingual staff broadcast** — write one message, pick languages, get instant translations, logged to a shared history
@@ -26,28 +48,51 @@ A GenAI-enabled concept for enhancing stadium operations and fan experience duri
 
 ---
 
-## Architecture
+## Running it locally (full stack)
 
-**Frontend:** single static HTML file (`index.html`), vanilla JS, no build step. Leaflet.js (via cdnjs) for the map, Google Fonts for type.
+Requires Node.js 18+.
 
-**"Backend":** this app was built to run as a **Claude.ai Artifact**, which provides two capabilities that stand in for a real backend:
+```bash
+cd backend
+npm install
+cp .env.example .env
+# edit .env and add your ANTHROPIC_API_KEY (get one at https://console.anthropic.com/)
+npm start
+```
 
-1. **`window.storage`** — a key-value store scoped to the artifact, with a `shared` flag. All operational state (crowd density, alerts, incidents, broadcasts, fan question log, KPIs) lives in one JSON blob under the key `matchday-stadium-state`, written/read with `shared: true` so every user/tab sees the same live state. A 5-second poll picks up writes made by other sessions.
-2. **The Anthropic API** — the app calls `https://api.anthropic.com/v1/messages` directly from the browser for chat replies, incident summaries, translations, and predictive alerts. No API key is embedded in the code; Claude.ai's artifact runtime handles auth transparently.
+Then open **http://localhost:3000** — the backend serves `frontend/index.html` and both the storage API and the Claude proxy live at `/api/*`.
 
-**Important — running outside Claude.ai:** `window.storage` and the unauthenticated `api.anthropic.com` calls **only work inside the Claude.ai artifact runtime**. If you open `index.html` directly in a browser or host it elsewhere (Netlify, GitHub Pages, etc.), those calls will fail (silently, with errors logged to the console) and the app will fall back to its local default state with no persistence, sync, or AI responses.
+Without an API key set, the app still runs — the crowd map, toggles, and static UI work fine — but chat replies, incident summaries, translations, and predictive alerts will return an error until `ANTHROPIC_API_KEY` is set.
 
-To make this portable to a normal hosting environment, you'd need to:
-- Replace `window.storage` calls with your own backend (e.g. a small Node/Express + SQLite or Postgres service, or Firebase/Supabase) exposing equivalent get/set endpoints
-- Replace the direct `fetch("https://api.anthropic.com/v1/messages")` calls with calls to your own server, which holds a real Anthropic API key server-side (never expose an API key in client-side code)
+### API endpoints (backend/server.js)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/storage/:key` | Read a stored JSON blob |
+| `POST` | `/api/storage/:key` | Write `{ "value": "<string>" }` |
+| `DELETE` | `/api/storage/:key` | Delete a key |
+| `POST` | `/api/claude` | Body `{ system, message }` → proxies to the Anthropic Messages API, returns `{ text }` |
+| `GET` | `/api/health` | Returns `{ ok, hasApiKey }` |
+
+State persists to `backend/data/store.json` (created automatically, gitignored — it's runtime data, not source).
+
+---
+
+## Deploying
+
+- **Frontend only, on Claude.ai:** use `frontend/claude-artifact.html` — publish it as a Claude Artifact and it works with zero backend setup.
+- **Full stack, anywhere that runs Node:** deploy the `backend/` folder (which also serves the frontend) to something like Render, Railway, Fly.io, or a VPS. Set `ANTHROPIC_API_KEY` as an environment variable there — **never commit it to the repo**. `backend/.env` is gitignored for this reason.
+- **Static-only hosting (GitHub Pages, Netlify, etc.):** you can host `frontend/claude-artifact.html` there, but it won't function — `window.storage` and unauthenticated `api.anthropic.com` calls only exist inside the Claude.ai runtime. Use `frontend/index.html` + a deployed `backend/` instead.
+
+---
 
 ## Map data
 
-Centered on MetLife Stadium, East Rutherford, NJ (a real 2026 host venue), using OpenStreetMap/CARTO dark tiles (no API key required). Gate positions are illustrative offsets from the stadium center, not the venue's actual gate layout. Swapping in the Google Maps JS API instead just requires adding an API key and changing the tile-layer initialization in the `initMaps()` function.
+Centered on MetLife Stadium, East Rutherford, NJ (a real 2026 host venue), using OpenStreetMap/CARTO dark tiles. Gate positions are illustrative offsets from the stadium center, not the venue's actual gate layout. To use the Google Maps JS API instead, add an API key and swap the tile-layer initialization in the `initMaps()` function of either frontend file.
 
 ## Disclosure
 
-Crowd figures, sensor feeds, and gate positions are simulated for demonstration. Chat replies, incident summaries, predictive alerts, and translations are generated live by Claude. Because operational data is stored with `shared: true`, anyone with the published link reads/writes the same live state — don't put anything sensitive into the chat, incidents, or broadcasts fields.
+Crowd figures, sensor feeds, and gate positions are simulated for demonstration. Chat replies, incident summaries, predictive alerts, and translations are generated live by Claude. Storage in both builds is shared across every client hitting the same backend/artifact — don't put anything sensitive into the chat, incidents, or broadcasts fields.
 
 ## License
 
