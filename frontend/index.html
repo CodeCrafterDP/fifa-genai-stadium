@@ -450,18 +450,41 @@ async function loadState(){
   }
 }
 
+let saveInProgress = false;
+let savePending = false;
+
 async function saveState(){
   S.updatedAt = Date.now();
-  try{
-    const res = await fetch(`${API_BASE}/api/storage/${STATE_KEY}`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({value: JSON.stringify(S)})
-    });
-    if(!res.ok) console.error('Storage write returned', res.status);
-    document.getElementById('lastSync').textContent = 'last write ' + new Date().toLocaleTimeString();
-  }catch(e){
-    console.error('Storage write failed', e);
-    document.getElementById('lastSync').textContent = 'sync error — retrying…';
+  if(saveInProgress){ savePending = true; return; }
+  saveInProgress = true;
+  await attemptSaveWithRetry();
+  saveInProgress = false;
+  if(savePending){
+    savePending = false;
+    await saveState();
+  }
+}
+
+async function attemptSaveWithRetry(maxAttempts=3){
+  for(let attempt=1; attempt<=maxAttempts; attempt++){
+    try{
+      const res = await fetch(`${API_BASE}/api/storage/${STATE_KEY}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({value: JSON.stringify(S)})
+      });
+      if(res.ok){
+        document.getElementById('lastSync').textContent = 'last write ' + new Date().toLocaleTimeString();
+        return;
+      }
+      throw new Error('Storage write returned ' + res.status);
+    }catch(e){
+      if(attempt === maxAttempts){
+        console.error('Storage write failed after ' + maxAttempts + ' attempts', e);
+        document.getElementById('lastSync').textContent = 'sync delayed — will retry on next update';
+      }else{
+        await new Promise(r=>setTimeout(r, 400 * attempt));
+      }
+    }
   }
 }
 
@@ -985,8 +1008,8 @@ async function init(){
   initMaps();
   renderAll();
   document.getElementById('lastSync').textContent = 'connected · ' + new Date().toLocaleTimeString();
-  setInterval(tick, 8000);
-  setInterval(pollRemote, 5000);
+  setInterval(tick, 25000);
+  setInterval(pollRemote, 6000);
 }
 init();
 </script>
