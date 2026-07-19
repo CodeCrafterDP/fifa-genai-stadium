@@ -56,6 +56,13 @@
   @keyframes fadein{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
 
   .sync-badge{display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono'; font-size:10.5px; color:var(--text-dim); margin-top:10px;}
+  .venue-picker{display:flex; align-items:center; gap:8px; margin-top:10px;}
+  .venue-picker label{font-family:'IBM Plex Mono'; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim);}
+  #venueSelect{
+    background:var(--surface-2); color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:7px 10px; font-family:'Inter'; font-size:12.5px; cursor:pointer; max-width:280px;
+  }
+  #venueSelect:focus{outline:none; border-color:var(--cyan);}
   .sync-dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(91,199,126,.6); animation:pulse-dot 2s infinite;}
   @keyframes pulse-dot{0%{box-shadow:0 0 0 0 rgba(91,199,126,.5);}70%{box-shadow:0 0 0 6px rgba(91,199,126,0);}100%{box-shadow:0 0 0 0 rgba(91,199,126,0);}}
 
@@ -203,6 +210,10 @@
       <h1 class="display">MatchDay OS</h1>
       <div class="sub">One generative layer, two views: a multilingual companion for fans in their pocket, and a live command center for the people running the building.</div>
       <div class="sync-badge"><span class="sync-dot"></span> Connected to shared live state — <span id="lastSync">syncing…</span></div>
+      <div class="venue-picker">
+        <label for="venueSelect">Host venue</label>
+        <select id="venueSelect" onchange="changeVenue(this.value)"></select>
+      </div>
     </div>
     <div class="tabs">
       <button class="tab-btn active" onclick="switchView('fan')">Fan Companion</button>
@@ -259,6 +270,7 @@
             <div class="card-title">Venue map</div>
             <span class="pill ok">Gate C highlighted</span>
           </div>
+          <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;" id="fanVenueLabel">MetLife Stadium — New York / New Jersey, USA</div>
           <div class="map-box"><div id="miniMap"></div></div>
           <div class="map-legend">
             <span><span class="dot" style="background:#35D0C4"></span> Your gate</span>
@@ -308,6 +320,7 @@
         <div class="card-title">Live gate map</div>
         <span class="pill live">● updates with feed</span>
       </div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;" id="opsVenueLabel">MetLife Stadium — New York / New Jersey, USA</div>
       <div class="map-box"><div id="opsMap"></div></div>
       <div class="map-legend">
         <span><span class="dot" style="background:#5BC77E"></span> Light &lt;50%</span>
@@ -392,6 +405,8 @@
 <script>
 /* =========================================================
    BACKEND — persistent shared state via window.storage
+/* =========================================================
+   BACKEND — persistent shared state via window.storage
    Single key holds the whole operational picture so we batch
    reads/writes instead of hammering storage per field.
    ========================================================= */
@@ -410,6 +425,7 @@ function defaultState(){
     broadcasts: [],
     queries: [],
     kpis: {attendance:68214, wait:6.4},
+    venue: 'metlife',
     updatedAt: Date.now()
   };
 }
@@ -445,6 +461,11 @@ async function pollRemote(){
     const remote = JSON.parse(r.value);
     if(remote.updatedAt && S && remote.updatedAt > S.updatedAt){
       S = Object.assign(defaultState(), remote);
+      if(S.venue !== currentVenue.id){
+        currentVenue = VENUES.find(v=>v.id===S.venue) || VENUES[0];
+        document.getElementById('venueSelect').value = currentVenue.id;
+        rebuildVenueMarkers();
+      }
       renderAll();
       document.getElementById('lastSync').textContent = 'updated from another session · ' + new Date().toLocaleTimeString();
     }
@@ -517,7 +538,7 @@ async function sendChat(){
   document.getElementById('sendBtn').disabled = true;
   addMsg(text, 'user');
   const typingEl = addMsg('Thinking…', 'ai typing');
-  const sys = `You are the MatchDay OS assistant, a helpful GenAI concierge for FIFA World Cup 2026 stadium visitors. Answer in ${LANG_NAMES[activeLang]} only, in 2-4 short sentences, warm and practical. You can invent plausible but clearly fictional matchday specifics (gate numbers, walk times, amenities) since this is a demo — never claim to pull real live data. Cover topics like wayfinding, seating, accessibility, transport, food, and safety.`;
+  const sys = `You are the MatchDay OS assistant, a helpful GenAI concierge for a FIFA World Cup 2026 visitor currently at ${currentVenue.name} in ${currentVenue.city}. Answer in ${LANG_NAMES[activeLang]} only, in 2-4 short sentences, warm and practical. You can invent plausible but clearly fictional matchday specifics (gate numbers, walk times, amenities) since this is a demo — never claim to pull real live data. Cover topics like wayfinding, seating, accessibility, transport, food, and safety.`;
   try{
     const reply = await callClaude(text, sys);
     typingEl.remove();
@@ -623,62 +644,137 @@ function renderFanRoute(){
 }
 
 /* ---------- venue maps (Leaflet + OpenStreetMap/CARTO, no API key needed) ---------- */
-const STADIUM = {lat: 40.8135, lng: -74.0745}; // MetLife Stadium, East Rutherford, NJ — a real 2026 host venue
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-// Gate positions around the stadium, mapped to the same density indices used by the SVG bowl (20 segments, 18° apart)
-const GATE_POINTS = [
-  {label:'Gate A', idx:0,  lat: STADIUM.lat+0.0016, lng: STADIUM.lng},
-  {label:'Gate C', idx:5,  lat: STADIUM.lat,          lng: STADIUM.lng+0.0019},
-  {label:'Gate E', idx:10, lat: STADIUM.lat-0.0016, lng: STADIUM.lng},
-  {label:'Gate G', idx:15, lat: STADIUM.lat,          lng: STADIUM.lng-0.0019}
+// All 16 official FIFA World Cup 2026 host venues
+const VENUES = [
+  {id:'metlife',    name:'MetLife Stadium',            city:'New York / New Jersey, USA', lat:40.8135,  lng:-74.0745},
+  {id:'sofi',        name:'SoFi Stadium',                city:'Los Angeles, USA',            lat:33.9535,  lng:-118.3392},
+  {id:'att',         name:'AT&T Stadium',                city:'Dallas, USA',                 lat:32.7473,  lng:-97.0945},
+  {id:'hardrock',    name:'Hard Rock Stadium',           city:'Miami, USA',                  lat:25.9580,  lng:-80.2389},
+  {id:'mercedes',    name:'Mercedes-Benz Stadium',       city:'Atlanta, USA',                 lat:33.7554,  lng:-84.4008},
+  {id:'lumen',       name:'Lumen Field',                 city:'Seattle, USA',                 lat:47.5952,  lng:-122.3316},
+  {id:'levis',       name:"Levi's Stadium",              city:'San Francisco Bay Area, USA',  lat:37.4032,  lng:-121.9698},
+  {id:'nrg',         name:'NRG Stadium',                 city:'Houston, USA',                 lat:29.6847,  lng:-95.4107},
+  {id:'arrowhead',   name:'Arrowhead Stadium',           city:'Kansas City, USA',             lat:39.0489,  lng:-94.4839},
+  {id:'gillette',    name:'Gillette Stadium',            city:'Boston, USA',                  lat:42.0909,  lng:-71.2643},
+  {id:'lincoln',     name:'Lincoln Financial Field',     city:'Philadelphia, USA',            lat:39.9008,  lng:-75.1675},
+  {id:'azteca',      name:'Estadio Azteca',              city:'Mexico City, Mexico',          lat:19.3029,  lng:-99.1505},
+  {id:'akron',       name:'Estadio Akron',               city:'Guadalajara, Mexico',          lat:20.6820,  lng:-103.4620},
+  {id:'bbva',        name:'Estadio BBVA',                city:'Monterrey, Mexico',            lat:25.6694,  lng:-100.2458},
+  {id:'bmo',         name:'BMO Field',                   city:'Toronto, Canada',              lat:43.6332,  lng:-79.4185},
+  {id:'bcplace',     name:'BC Place',                    city:'Vancouver, Canada',            lat:49.2768,  lng:-123.1119}
 ];
-const POI_POINTS = [
-  {label:'Parking Lot P1', lat: STADIUM.lat+0.0032, lng: STADIUM.lng+0.0032},
-  {label:'Parking Lot P2', lat: STADIUM.lat+0.0032, lng: STADIUM.lng-0.0032},
-  {label:'Parking Lot P3', lat: STADIUM.lat-0.0032, lng: STADIUM.lng-0.0032},
-  {label:'Shuttle & Rail Stop', lat: STADIUM.lat-0.0045, lng: STADIUM.lng},
-  {label:'Accessible entrance', lat: STADIUM.lat+0.0004, lng: STADIUM.lng+0.0021}
-];
+let currentVenue = VENUES[0];
+
+function gatePoints(v){
+  // Gate positions around the stadium, mapped to the same density indices used by the SVG bowl (20 segments, 18° apart)
+  return [
+    {label:'Gate A', idx:0,  lat: v.lat+0.0016, lng: v.lng},
+    {label:'Gate C', idx:5,  lat: v.lat,          lng: v.lng+0.0019},
+    {label:'Gate E', idx:10, lat: v.lat-0.0016, lng: v.lng},
+    {label:'Gate G', idx:15, lat: v.lat,          lng: v.lng-0.0019}
+  ];
+}
+function poiPoints(v){
+  return [
+    {label:'Parking Lot P1', lat: v.lat+0.0032, lng: v.lng+0.0032},
+    {label:'Parking Lot P2', lat: v.lat+0.0032, lng: v.lng-0.0032},
+    {label:'Parking Lot P3', lat: v.lat-0.0032, lng: v.lng-0.0032},
+    {label:'Shuttle & Rail Stop', lat: v.lat-0.0045, lng: v.lng},
+    {label:'Accessible entrance', lat: v.lat+0.0004, lng: v.lng+0.0021}
+  ];
+}
 
 let miniMap, opsMap;
+let miniStadiumMarker, opsStadiumMarker;
 let miniGateMarker, opsGateMarkers = [];
+let miniPoiMarkers = [], opsPoiMarkers = [];
 
-function initMaps(){
-  if(typeof L === 'undefined') return; // library failed to load — page still works without maps
-
-  miniMap = L.map('miniMap', {zoomControl:false, attributionControl:true}).setView([STADIUM.lat, STADIUM.lng], 16);
-  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(miniMap);
-  L.circleMarker([STADIUM.lat, STADIUM.lng], {radius:9, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
-    .addTo(miniMap).bindPopup('<b>MetLife Stadium</b><br>Pitch / field level');
-  const gateC = GATE_POINTS[1];
-  miniGateMarker = L.circleMarker([gateC.lat, gateC.lng], {radius:9, weight:2, color:'#0E1613', fillOpacity:0.95}).addTo(miniMap);
-  POI_POINTS.forEach(p=>{
-    L.circleMarker([p.lat, p.lng], {radius:6, weight:1.5, color:'#0E1613', fillColor:'#93A69B', fillOpacity:0.9})
-      .addTo(miniMap).bindPopup(`<b>${p.label}</b>`);
+function populateVenueSelect(){
+  const sel = document.getElementById('venueSelect');
+  sel.innerHTML = '';
+  VENUES.forEach(v=>{
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = `${v.name} — ${v.city}`;
+    sel.appendChild(opt);
   });
+  sel.value = currentVenue.id;
+}
 
-  opsMap = L.map('opsMap', {zoomControl:true, attributionControl:true}).setView([STADIUM.lat, STADIUM.lng], 15);
-  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(opsMap);
-  L.circleMarker([STADIUM.lat, STADIUM.lng], {radius:12, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
-    .addTo(opsMap).bindPopup('<b>MetLife Stadium</b><br>Pitch / field level');
-  opsGateMarkers = GATE_POINTS.map(g=>{
+async function changeVenue(venueId){
+  const v = VENUES.find(x=>x.id===venueId);
+  if(!v) return;
+  currentVenue = v;
+  rebuildVenueMarkers();
+  if(S){ S.venue = venueId; await saveState(); }
+}
+
+function rebuildVenueMarkers(){
+  if(typeof L === 'undefined' || !miniMap || !opsMap) return;
+  const v = currentVenue;
+  const gates = gatePoints(v);
+  const pois = poiPoints(v);
+
+  miniMap.setView([v.lat, v.lng], 16);
+  opsMap.setView([v.lat, v.lng], 15);
+
+  miniStadiumMarker.setLatLng([v.lat, v.lng]).setPopupContent(`<b>${v.name}</b><br>${v.city}`);
+  opsStadiumMarker.setLatLng([v.lat, v.lng]).setPopupContent(`<b>${v.name}</b><br>${v.city}`);
+  const fanLbl = document.getElementById('fanVenueLabel');
+  const opsLbl = document.getElementById('opsVenueLabel');
+  if(fanLbl) fanLbl.textContent = `${v.name} — ${v.city}`;
+  if(opsLbl) opsLbl.textContent = `${v.name} — ${v.city}`;
+
+  const gateC = gates[1];
+  miniGateMarker.setLatLng([gateC.lat, gateC.lng]);
+
+  opsGateMarkers.forEach(m=>m.remove());
+  opsGateMarkers = gates.map(g=>{
     const m = L.circleMarker([g.lat, g.lng], {radius:11, weight:2, color:'#0E1613', fillOpacity:0.95}).addTo(opsMap);
     m.gateInfo = g;
     return m;
   });
-  POI_POINTS.forEach(p=>{
+
+  miniPoiMarkers.forEach(m=>m.remove());
+  miniPoiMarkers = pois.map(p=>
     L.circleMarker([p.lat, p.lng], {radius:6, weight:1.5, color:'#0E1613', fillColor:'#93A69B', fillOpacity:0.9})
-      .addTo(opsMap).bindPopup(`<b>${p.label}</b>`);
-  });
+      .addTo(miniMap).bindPopup(`<b>${p.label}</b>`)
+  );
+  opsPoiMarkers.forEach(m=>m.remove());
+  opsPoiMarkers = pois.map(p=>
+    L.circleMarker([p.lat, p.lng], {radius:6, weight:1.5, color:'#0E1613', fillColor:'#93A69B', fillOpacity:0.9})
+      .addTo(opsMap).bindPopup(`<b>${p.label}</b>`)
+  );
 
   updateMapMarkers();
 }
 
+function initMaps(){
+  if(typeof L === 'undefined') return; // library failed to load — page still works without maps
+  const v = currentVenue;
+
+  miniMap = L.map('miniMap', {zoomControl:false, attributionControl:true}).setView([v.lat, v.lng], 16);
+  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(miniMap);
+  miniStadiumMarker = L.circleMarker([v.lat, v.lng], {radius:9, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
+    .addTo(miniMap).bindPopup(`<b>${v.name}</b><br>${v.city}`);
+  const gateC = gatePoints(v)[1];
+  miniGateMarker = L.circleMarker([gateC.lat, gateC.lng], {radius:9, weight:2, color:'#0E1613', fillOpacity:0.95}).addTo(miniMap);
+
+  opsMap = L.map('opsMap', {zoomControl:true, attributionControl:true}).setView([v.lat, v.lng], 15);
+  L.tileLayer(TILE_URL, {attribution: TILE_ATTR, subdomains:'abcd', maxZoom:19}).addTo(opsMap);
+  opsStadiumMarker = L.circleMarker([v.lat, v.lng], {radius:12, color:'#0E1613', weight:2, fillColor:'#F2A93B', fillOpacity:0.95})
+    .addTo(opsMap).bindPopup(`<b>${v.name}</b><br>${v.city}`);
+
+  rebuildVenueMarkers();
+}
+
 function updateMapMarkers(){
   if(!S) return;
-  const gateC = GATE_POINTS[1];
+  const gates = gatePoints(currentVenue);
+  const gateC = gates[1];
   const dC = S.densities[gateC.idx] ?? 0.5;
   if(miniGateMarker){
     miniGateMarker.setStyle({fillColor:'#35D0C4'});
@@ -877,6 +973,8 @@ function renderAll(){
 }
 async function init(){
   S = await loadState();
+  currentVenue = VENUES.find(v=>v.id===S.venue) || VENUES[0];
+  populateVenueSelect();
   initMaps();
   renderAll();
   document.getElementById('lastSync').textContent = 'connected · ' + new Date().toLocaleTimeString();
